@@ -4,7 +4,7 @@
 package com.microsoft.azure.synapse.ml.codegen
 
 import com.microsoft.azure.synapse.ml.core.serialize.ComplexParam
-import org.apache.spark.ml.param.{Param, ParamPair, PythonWrappableParam}
+import org.apache.spark.ml.param.{Param, ParamPair, PythonWrappableParam, RWrappableParam}
 
 object GenerationUtils {
   def indent(lines: String, numTabs: Int): String = {
@@ -46,6 +46,21 @@ object GenerationUtils {
         throw new NotImplementedError("No translation found for complex parameter")
       case _ =>
         s"""${p.name}=${PythonWrappableParam.pyDefaultRender(v, p)}"""
+    }
+  }
+
+  def rRenderParam[T](pp: ParamPair[T]): String = {
+    rRenderParam(pp.param, pp.value)
+  }
+
+  def rRenderParam[T](p: Param[T], v: T): String = {
+    p match {
+      case rwp: RWrappableParam[_] =>
+        rwp.rConstructorLine(v.asInstanceOf[rwp.InnerType])
+      case _: ComplexParam[_] =>
+        throw new NotImplementedError("No translation found for complex parameter")
+      case _ =>
+        s"""${p.name}=${RWrappableParam.rDefaultRender(v, p)}"""
     }
   }
 

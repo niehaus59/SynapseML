@@ -44,6 +44,156 @@ class TestObject[S <: PipelineStage](val stage: S,
 
 }
 
+trait LanguageTestFuzzing[S <: PipelineStage] extends TestBase with DataFrameEquality {
+
+  def getTestClass(conf: CodegenConfig,
+                   generatedTests: String,
+                   stage: S,
+                   stageName: String,
+                   importPathString: String): String
+
+  def instantiateModel(paramMap: Seq[ParamPair[_]]) : String
+
+  def testObjects(): Seq[TestObject[S]]
+
+  val testClassName: String = this.getClass.getName.split(".".toCharArray).last
+
+  def testDataDir(conf: CodegenConfig): File = FileUtilities.join(
+    conf.testDataDir, this.getClass.getName.split(".".toCharArray).last)
+
+  def saveDataset(conf: CodegenConfig, df: DataFrame, name: String): Unit = {
+    df.write.mode("overwrite").parquet(new File(testDataDir(conf), s"$name.parquet").toString)
+  }
+
+  def saveModel(conf: CodegenConfig, model: S, name: String): Unit = {
+    model match {
+      case writable: MLWritable =>
+        writable.write.overwrite().save(new File(testDataDir(conf), s"$name.model").toString)
+      case _ =>
+        throw new IllegalArgumentException(s"${model.getClass.getName} is not writable")
+    }
+
+  }
+
+  val testFitting = false
+
+  def saveTestData(conf: CodegenConfig): Unit = {
+    testDataDir(conf).mkdirs()
+    testObjects().zipWithIndex.foreach { case (to, i) =>
+      saveModel(conf, to.stage, s"model-$i")
+      if (testFitting) {
+        saveDataset(conf, to.fitDF, s"fit-$i")
+        saveDataset(conf, to.transDF, s"trans-$i")
+        to.validateDF.foreach(saveDataset(conf, _, s"val-$i"))
+      }
+    }
+  }
+
+  def pyTestInstantiateModel(stage: S, num: Int): String = {
+    val fullParamMap = stage.extractParamMap().toSeq
+    val partialParamMap = stage.extractParamMap().toSeq.filter(pp => stage.get(pp.param).isDefined)
+    val stageName = stage.getClass.getName.split(".".toCharArray).last
+/*
+    def instantiateModel(paramMap: Seq[ParamPair[_]]) = {
+      val externalLoadlingLines = paramMap.flatMap { pp =>
+        pp.param match {
+          case ep: ExternalRWrappableParam[_] =>
+            Some(ep.pyLoadLine(num))
+          case _ => None
+        }
+      }.mkString("\n")
+      s"""
+         |$externalLoadlingLines
+         |
+         |model = $stageName(
+         |${indent(paramMap.map(pyRenderParam(_)).mkString(",\n"), 1)}
+         |)
+         |
+         |""".stripMargin
+    }*/
+
+    try {
+      instantiateModel(fullParamMap)
+    } catch {
+      case _: NotImplementedError =>
+        println(s"could not generate full test for ${stageName}, resorting to partial test")
+        instantiateModel(partialParamMap)
+    }
+  }
+
+
+  //noinspection ScalaStyle
+  def makePyTests(testObject: TestObject[S], num: Int): String = {
+    val stage = testObject.stage
+    val stageName = stage.getClass.getName.split(".".toCharArray).last
+    val fittingTest = stage match {
+      case _: Estimator[_] if testFitting =>
+        s"""
+           |fdf = spark.read.parquet(join(test_data_dir, "fit-$num.parquet"))
+           |tdf = spark.read.parquet(join(test_data_dir, "trans-$num.parquet"))
+           |model.fit(fdf).transform(tdf).show()
+           |""".stripMargin
+      case _: Transformer if testFitting =>
+        s"""
+           |tdf = spark.read.parquet(join(test_data_dir, "trans-$num.parquet"))
+           |model.transform(tdf).show()
+           |""".stripMargin
+      case _ => ""
+    }
+    val mlflowTest = stage match {
+      case _: Model[_] =>
+        s"""
+           |mlflow.spark.save_model(model, "mlflow-save-model-$num")
+           |mlflow.spark.log_model(model, "mlflow-log-model-$num")
+           |mlflow_model = mlflow.pyfunc.load_model("mlflow-save-model-$num")
+           |""".stripMargin
+      case _: Transformer => stage.getClass.getName.split(".".toCharArray).dropRight(1).last match {
+        case "cognitive" =>
+          s"""
+             |pipeline_model = PipelineModel(stages=[model])
+             |mlflow.spark.save_model(pipeline_model, "mlflow-save-model-$num")
+             |mlflow.spark.log_model(pipeline_model, "mlflow-log-model-$num")
+             |mlflow_model = mlflow.pyfunc.load_model("mlflow-save-model-$num")
+             |""".stripMargin
+        case _ => ""
+      }
+      case _ => ""
+    }
+
+    s"""
+       |def test_${stageName}_constructor_$num(self):
+       |${indent(pyTestInstantiateModel(stage, num), 1)}
+       |
+       |    self.assert_correspondence(model, "py-constructor-model-$num.model", $num)
+       |
+       |${indent(fittingTest, 1)}
+       |
+       |${indent(mlflowTest, 1)}
+       |
+       |""".stripMargin
+  }
+
+
+  def makeTestFile(conf: CodegenConfig): Unit = {
+    spark
+    saveTestData(conf)
+    val generatedTests = testObjects().zipWithIndex.map { case (to, i) => makePyTests(to, i) }
+    val stage = testObjects().head.stage
+    val stageName = stage.getClass.getName.split(".".toCharArray).last
+    val importPath = stage.getClass.getName.split(".".toCharArray).dropRight(1)
+    val importPathString = importPath.mkString(".").replaceAllLiterally("com.microsoft.azure.synapse.ml", "synapse.ml")
+    val testClass = getTestClass(conf, generatedTests, stage, stageName, importPathString)
+    val testFolders = importPath.mkString(".")
+      .replaceAllLiterally("com.microsoft.azure.synapse.ml", "synapsemltest").split(".".toCharArray)
+    val testDir = FileUtilities.join((Seq(conf.pyTestDir.toString) ++ testFolders.toSeq): _*)
+    testDir.mkdirs()
+    Files.write(
+      FileUtilities.join(testDir, "test_" + camelToSnake(testClassName) + ".py").toPath,
+      testClass.getBytes(StandardCharsets.UTF_8))
+  }
+
+}
+
 trait PyTestFuzzing[S <: PipelineStage] extends TestBase with DataFrameEquality {
 
   def pyTestObjects(): Seq[TestObject[S]]
@@ -89,7 +239,7 @@ trait PyTestFuzzing[S <: PipelineStage] extends TestBase with DataFrameEquality 
     def instantiateModel(paramMap: Seq[ParamPair[_]]) = {
       val externalLoadlingLines = paramMap.flatMap { pp =>
         pp.param match {
-          case ep: ExternalPythonWrappableParam[_] =>
+          case ep: ExternalRWrappableParam[_] =>
             Some(ep.pyLoadLine(num))
           case _ => None
         }
@@ -170,6 +320,208 @@ trait PyTestFuzzing[S <: PipelineStage] extends TestBase with DataFrameEquality 
     spark
     saveTestData(conf)
     val generatedTests = pyTestObjects().zipWithIndex.map { case (to, i) => makePyTests(to, i) }
+    val stage = pyTestObjects().head.stage
+    val stageName = stage.getClass.getName.split(".".toCharArray).last
+    val importPath = stage.getClass.getName.split(".".toCharArray).dropRight(1)
+    val importPathString = importPath.mkString(".").replaceAllLiterally("com.microsoft.azure.synapse.ml", "synapse.ml")
+    val testClass =
+      s"""import unittest
+         |from synapsemltest.spark import *
+         |from $importPathString import $stageName
+         |from os.path import join
+         |import json
+         |import mlflow
+         |from pyspark.ml import PipelineModel
+         |
+         |test_data_dir = "${testDataDir(conf).toString.replaceAllLiterally("\\", "\\\\")}"
+         |
+         |
+         |class $testClassName(unittest.TestCase):
+         |    def assert_correspondence(self, model, name, num):
+         |        model.write().overwrite().save(join(test_data_dir, name))
+         |        sc._jvm.com.microsoft.azure.synapse.ml.core.utils.ModelEquality.assertEqual(
+         |            "${stage.getClass.getName}",
+         |            str(join(test_data_dir, name)),
+         |            str(join(test_data_dir, "model-{}.model".format(num)))
+         |        )
+         |
+         |${indent(generatedTests.mkString("\n\n"), 1)}
+         |
+         |if __name__ == "__main__":
+         |    result = unittest.main()
+         |
+         |""".stripMargin
+
+    val testFolders = importPath.mkString(".")
+      .replaceAllLiterally("com.microsoft.azure.synapse.ml", "synapsemltest").split(".".toCharArray)
+    val testDir = FileUtilities.join((Seq(conf.pyTestDir.toString) ++ testFolders.toSeq): _*)
+    testDir.mkdirs()
+    Files.write(
+      FileUtilities.join(testDir, "test_" + camelToSnake(testClassName) + ".py").toPath,
+      testClass.getBytes(StandardCharsets.UTF_8))
+  }
+
+  def getTestClass(conf: CodegenConfig,
+                   generatedTests: String,
+                   stage: S,
+                   stageName: String,
+                   importPathString: String): String = {
+     s"""import unittest
+       |from synapsemltest.spark import *
+       |from $importPathString import $stageName
+       |from os.path import join
+       |import json
+       |import mlflow
+       |from pyspark.ml import PipelineModel
+       |
+       |test_data_dir = "${testDataDir(conf).toString.replaceAllLiterally("\\", "\\\\")}"
+       |
+       |
+       |class $testClassName(unittest.TestCase):
+       |    def assert_correspondence(self, model, name, num):
+       |        model.write().overwrite().save(join(test_data_dir, name))
+       |        sc._jvm.com.microsoft.azure.synapse.ml.core.utils.ModelEquality.assertEqual(
+       |            "${stage.getClass.getName}",
+       |            str(join(test_data_dir, name)),
+       |            str(join(test_data_dir, "model-{}.model".format(num)))
+       |        )
+       |
+       |${indent(generatedTests.mkString("\n\n"), 1)}
+       |
+       |if __name__ == "__main__":
+       |    result = unittest.main()
+       |
+       |""".stripMargin
+  }
+
+}
+
+trait RTestFuzzing[S <: PipelineStage] extends TestBase with DataFrameEquality {
+
+  def rTestObjects(): Seq[TestObject[S]]
+
+  val testClassName: String = this.getClass.getName.split(".".toCharArray).last
+
+  def testDataDir(conf: CodegenConfig): File = FileUtilities.join(
+    conf.testDataDir, this.getClass.getName.split(".".toCharArray).last)
+
+  def saveDataset(conf: CodegenConfig, df: DataFrame, name: String): Unit = {
+    df.write.mode("overwrite").parquet(new File(testDataDir(conf), s"$name.parquet").toString)
+  }
+
+  def saveModel(conf: CodegenConfig, model: S, name: String): Unit = {
+    model match {
+      case writable: MLWritable =>
+        writable.write.overwrite().save(new File(testDataDir(conf), s"$name.model").toString)
+      case _ =>
+        throw new IllegalArgumentException(s"${model.getClass.getName} is not writable")
+    }
+
+  }
+
+  val testFitting = false
+
+  def saveTestData(conf: CodegenConfig): Unit = {
+    testDataDir(conf).mkdirs()
+    pyTestObjects().zipWithIndex.foreach { case (to, i) =>
+      saveModel(conf, to.stage, s"model-$i")
+      if (testFitting) {
+        saveDataset(conf, to.fitDF, s"fit-$i")
+        saveDataset(conf, to.transDF, s"trans-$i")
+        to.validateDF.foreach(saveDataset(conf, _, s"val-$i"))
+      }
+    }
+  }
+
+  def pyTestInstantiateModel(stage: S, num: Int): String = {
+    val fullParamMap = stage.extractParamMap().toSeq
+    val partialParamMap = stage.extractParamMap().toSeq.filter(pp => stage.get(pp.param).isDefined)
+    val stageName = stage.getClass.getName.split(".".toCharArray).last
+
+    def instantiateModel(paramMap: Seq[ParamPair[_]]) = {
+      val externalLoadlingLines = paramMap.flatMap { pp =>
+        pp.param match {
+          case ep: ExternalPythonWrappableParam[_] =>
+            Some(ep.pyLoadLine(num))
+          case _ => None
+        }
+      }.mkString("\n")
+      s"""
+         |$externalLoadlingLines
+         |
+         |model = $stageName(
+         |${indent(paramMap.map(pyRenderParam(_)).mkString(",\n"), 1)}
+         |)
+         |
+         |""".stripMargin
+    }
+
+    try {
+      instantiateModel(fullParamMap)
+    } catch {
+      case _: NotImplementedError =>
+        println(s"could not generate full test for ${stageName}, resorting to partial test")
+        instantiateModel(partialParamMap)
+    }
+  }
+
+
+  //noinspection ScalaStyle
+  def makeRTests(testObject: TestObject[S], num: Int): String = {
+    val stage = testObject.stage
+    val stageName = stage.getClass.getName.split(".".toCharArray).last
+    val fittingTest = stage match {
+      case _: Estimator[_] if testFitting =>
+        s"""
+           |fdf = spark.read.parquet(join(test_data_dir, "fit-$num.parquet"))
+           |tdf = spark.read.parquet(join(test_data_dir, "trans-$num.parquet"))
+           |model.fit(fdf).transform(tdf).show()
+           |""".stripMargin
+      case _: Transformer if testFitting =>
+        s"""
+           |tdf = spark.read.parquet(join(test_data_dir, "trans-$num.parquet"))
+           |model.transform(tdf).show()
+           |""".stripMargin
+      case _ => ""
+    }
+    val mlflowTest = stage match {
+      case _: Model[_] =>
+        s"""
+           |mlflow.spark.save_model(model, "mlflow-save-model-$num")
+           |mlflow.spark.log_model(model, "mlflow-log-model-$num")
+           |mlflow_model = mlflow.pyfunc.load_model("mlflow-save-model-$num")
+           |""".stripMargin
+      case _: Transformer => stage.getClass.getName.split(".".toCharArray).dropRight(1).last match {
+        case "cognitive" =>
+          s"""
+             |pipeline_model = PipelineModel(stages=[model])
+             |mlflow.spark.save_model(pipeline_model, "mlflow-save-model-$num")
+             |mlflow.spark.log_model(pipeline_model, "mlflow-log-model-$num")
+             |mlflow_model = mlflow.pyfunc.load_model("mlflow-save-model-$num")
+             |""".stripMargin
+        case _ => ""
+      }
+      case _ => ""
+    }
+
+    s"""
+       |def test_${stageName}_constructor_$num(self):
+       |${indent(pyTestInstantiateModel(stage, num), 1)}
+       |
+       |    self.assert_correspondence(model, "py-constructor-model-$num.model", $num)
+       |
+       |${indent(fittingTest, 1)}
+       |
+       |${indent(mlflowTest, 1)}
+       |
+       |""".stripMargin
+  }
+
+
+  def makeRTestFile(conf: CodegenConfig): Unit = {
+    spark
+    saveTestData(conf)
+    val generatedTests = pyTestObjects().zipWithIndex.map { case (to, i) => makeRTests(to, i) }
     val stage = pyTestObjects().head.stage
     val stageName = stage.getClass.getName.split(".".toCharArray).last
     val importPath = stage.getClass.getName.split(".".toCharArray).dropRight(1)

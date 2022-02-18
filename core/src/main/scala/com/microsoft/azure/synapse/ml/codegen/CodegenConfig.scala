@@ -19,6 +19,7 @@ case class CodegenConfig(name: String,
   def generatedDir: File = new File(targetDir, "generated")
   def packageDir: File = new File(generatedDir, "package")
   def srcDir: File = new File(generatedDir, "src")
+
   def testDir: File = new File(generatedDir, "test")
   def docDir: File = new File(generatedDir, "doc")
   def testDataDir: File = new File(generatedDir, "test-data")
