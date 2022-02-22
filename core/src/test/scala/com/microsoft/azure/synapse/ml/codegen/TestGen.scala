@@ -22,7 +22,7 @@ object TestGen {
   def generatePythonTests(conf: CodegenConfig): Unit = {
     instantiateServices[PyTestFuzzing[_]](conf.jarName).foreach { ltc =>
       try {
-        ltc.makePyTestFile(conf)
+        ltc.makeTestFile(conf, conf.pyTestDir.toString)
       } catch {
         case _: NotImplementedError =>
           println(s"ERROR: Could not generate test for ${ltc.testClassName} because of Complex Parameters")
@@ -86,4 +86,5 @@ object TestGen {
     }
     makeInitFiles(conf)
   }
+
 }
