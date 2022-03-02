@@ -12,13 +12,13 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import org.apache.commons.io.FileUtils
 import org.apache.spark.ml._
-import org.apache.spark.ml.param.{DataFrameEquality, ExternalPythonWrappableParam, ParamPair}
+import org.apache.spark.ml.param.{DataFrameEquality, ExternalPythonWrappableParam, ExternalRWrappableParam, ParamPair, RWrappableParam}
 import org.apache.spark.ml.util.{MLReadable, MLWritable}
 import org.apache.spark.sql.DataFrame
 import com.microsoft.azure.synapse.ml.codegen.GenerationUtils._
 
 /**
-  * Class for holding test information, call by name to avoid uneccesary computations in test generations
+  * Class for holding test information, call by name to avoid unnecessary computations in test generations
   *
   * @param stage         Pipeline stage for testing
   * @param fitDFArg      Dataframe to fit
@@ -128,7 +128,7 @@ trait LanguageTestFuzzing[S <: PipelineStage] extends TestBase with DataFrameEqu
 trait PyTestFuzzing[S <: PipelineStage] extends LanguageTestFuzzing[S] { //extends TestBase with DataFrameEquality {
 
   override def instantiateModel(paramMap: Seq[ParamPair[_]], stageName: String, num: Int): String = {
-    val externalLoadlingLines = paramMap.flatMap { pp =>
+    val externalLoadlongLines = paramMap.flatMap { pp =>
       pp.param match {
         case ep: ExternalPythonWrappableParam[_] =>
           Some(ep.pyLoadLine(num))
@@ -136,7 +136,7 @@ trait PyTestFuzzing[S <: PipelineStage] extends LanguageTestFuzzing[S] { //exten
       }
     }.mkString("\n")
     s"""
-       |$externalLoadlingLines
+       |$externalLoadlongLines
        |
        |model = $stageName(
        |${indent(paramMap.map(pyRenderParam(_)).mkString(",\n"), 1)}
@@ -234,18 +234,18 @@ trait PyTestFuzzing[S <: PipelineStage] extends LanguageTestFuzzing[S] { //exten
 
 trait RTestFuzzing[S <: PipelineStage] extends LanguageTestFuzzing[S] {
   override def instantiateModel(paramMap: Seq[ParamPair[_]], stageName: String, num: Int): String = {
-    val externalLoadlingLines = paramMap.flatMap { pp =>
+    val externalLoadlongLines = paramMap.flatMap { pp =>
       pp.param match {
-        case ep: ExternalPythonWrappableParam[_] =>
-          Some(ep.pyLoadLine(num))
+        case rp: ExternalRWrappableParam[_] =>
+          Some(rp.rLoadLine(num))
         case _ => None
       }
     }.mkString("\n")
     s"""
-       |$externalLoadlingLines
+       |$externalLoadlongLines
        |
        |model = $stageName(
-       |${indent(paramMap.map(pyRenderParam(_)).mkString(",\n"), 1)}
+       |${indent(paramMap.map(rRenderParam(_)).mkString(",\n"), 1)}
        |)
        |
        |""".stripMargin
@@ -258,8 +258,10 @@ trait RTestFuzzing[S <: PipelineStage] extends LanguageTestFuzzing[S] {
     val fittingTest = stage match {
       case _: Estimator[_] if testFitting =>
         s"""
-           |fdf = spark.read.parquet(join(test_data_dir, "fit-$num.parquet"))
-           |tdf = spark.read.parquet(join(test_data_dir, "trans-$num.parquet"))
+           |fdf <- read.parquet(join(test_data_dir, "fit-$num.parquet"))
+           |tdf <- read.parquet(join(test_data_dir, "trans-$num.parquet))
+           |
+           |showDF(?)
            |model.fit(fdf).transform(tdf).show()
            |""".stripMargin
       case _: Transformer if testFitting =>
