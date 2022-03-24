@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import org.apache.spark.ml.evaluation.Evaluator
 import org.apache.spark.ml.param._
-import org.apache.spark.ml.{Estimator, Model, Transformer}
+import org.apache.spark.ml.{Estimator, LanguageType, Model, Transformer}
 import org.apache.commons.lang.StringEscapeUtils
 
 import scala.collection.Iterator.iterate
@@ -152,7 +152,7 @@ trait PythonWrappable extends BaseWrappable {
       case (_: ComplexParam[_], _) | (_, None) =>
         s"${p.name}=None"
       case (_, Some(v)) =>
-        s"""${p.name}=${PythonWrappableParam.pyDefaultRender(v, p)}"""
+        s"""${p.name}=${GeneratedWrappableParam.defaultRender(v, LanguageType.Python, p)}"""
     }
   }
 
@@ -415,7 +415,7 @@ trait RWrappable extends BaseWrappable {
       case (_: ComplexParam[_], _) | (_, None) =>
         s"${p.name}=NULL"
       case (_, Some(v)) =>
-        s"""${p.name}=${RWrappableParam.rDefaultRender(v, p)}"""
+        s"""${p.name}=${GeneratedWrappableParam.defaultRender(v, LanguageType.R, p)}"""
     }
   }
 

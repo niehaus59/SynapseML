@@ -42,11 +42,17 @@ object JarLoadingUtils {
   }
 
   def instantiateServices[T: ClassTag](instantiate: Class[_] => Any, jarName: Option[String]): List[T] = {
+    val a = AllClasses.filter(classTag[T].runtimeClass.isAssignableFrom(_))
+    val b = a.filter(c => jarName.forall(c.getResource(c.getSimpleName + ".class").toString.contains(_)))
+    val d = b.filter(clazz => !Modifier.isAbstract(clazz.getModifiers))
+    val e = d.map(instantiate(_)).asInstanceOf[List[T]]
+    e /*
     AllClasses
       .filter(classTag[T].runtimeClass.isAssignableFrom(_))
       .filter(c => jarName.forall(c.getResource(c.getSimpleName + ".class").toString.contains(_)))
       .filter(clazz => !Modifier.isAbstract(clazz.getModifiers))
       .map(instantiate(_)).asInstanceOf[List[T]]
+      */
   }
 
   def instantiateServices[T: ClassTag](jarName: Option[String] = None): List[T] = instantiateServices[T]({

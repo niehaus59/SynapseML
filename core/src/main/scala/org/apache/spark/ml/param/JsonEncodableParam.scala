@@ -3,8 +3,11 @@
 
 package org.apache.spark.ml.param
 
+import org.apache.spark.ml.LanguageType
+import spray.json.DefaultJsonProtocol.tuple2Format
 import spray.json._
 import spray.json.JsonFormat
+
 import scala.collection.JavaConverters._
 
 object ServiceParamJsonProtocol extends DefaultJsonProtocol {
@@ -58,17 +61,17 @@ class ServiceParam[T](parent: Params,
                      )
                      (@transient implicit val dataFormat: JsonFormat[T])
   extends JsonEncodableParam[Either[T, String]](parent, name, doc, isValid)
-    with PythonWrappableParam[Either[T, String]] {
+    with GeneratedWrappableParam[Either[T, String]] {
   type ValueType = T
 
-  override def pyValue(v: Either[T, String]): String = {
+  override def generatedValue(v: Either[T, String]): String = {
     v match {
-      case Left(t) => PythonWrappableParam.pyDefaultRender(t)
+      case Left(t) => GeneratedWrappableParam.defaultRender(t)
       case Right(n) => s""""$n""""
     }
   }
 
-  override def pyName(v: Either[T, String]): String = {
+  override def generatedName(v: Either[T, String]): String = {
     v match {
       case Left(_) => name
       case Right(_) => name + "Col"

@@ -4,6 +4,7 @@
 package com.microsoft.azure.synapse.ml.codegen
 
 import java.io.File
+import java.nio.file.Files
 import CodegenConfigProtocol._
 import com.microsoft.azure.synapse.ml.build.BuildInfo
 import com.microsoft.azure.synapse.ml.core.env.FileUtilities._
@@ -15,6 +16,8 @@ import spray.json._
 
 object CodeGenUtils {
   def clean(dir: File): Unit = if (dir.exists()) FileUtils.forceDelete(dir)
+
+  def createDir(dir: File): Unit = Files.createDirectories(dir.toPath)
 
   def toDir(f: File): File = new File(f, File.separator)
 }

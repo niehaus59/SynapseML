@@ -5,6 +5,8 @@ package org.apache.spark.ml.param
 
 import com.microsoft.azure.synapse.ml.core.serialize.ComplexParam
 import com.microsoft.azure.synapse.ml.core.utils.ParamEquality
+import org.apache.spark.ml.LanguageType
+import org.apache.spark.ml.LanguageType.LanguageType
 import org.apache.spark.ml.linalg.DenseVector
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row}
@@ -117,17 +119,24 @@ trait DataFrameEquality extends Serializable {
   */
 class DataFrameParam(parent: Params, name: String, doc: String, isValid: DataFrame => Boolean)
   extends ComplexParam[DataFrame](parent, name, doc, isValid)
-    with ExternalPythonWrappableParam[DataFrame] with ParamEquality[DataFrame] with DataFrameEquality {
+    with ExternalGeneratedWrappableParam[DataFrame] with ParamEquality[DataFrame] with DataFrameEquality {
 
   def this(parent: Params, name: String, doc: String) =
     this(parent, name, doc, ParamValidators.alwaysTrue)
 
-  override def pyValue(v: DataFrame): String = {
+  override def generatedValue(v: DataFrame): String = {
     s"""${name}DF"""
   }
 
-  override def pyLoadLine(modelNum: Int): String = {
-    s"""${name}DF = spark.read.parquet(join(test_data_dir, "model-${modelNum}.model", "complexParams", "${name}"))"""
+  override def loadLine(modelNum: Int, language: LanguageType = LanguageType.Python): String = {
+    language match {
+      case LanguageType.Python =>
+        s"""${name}DF = spark.read.parquet(join(test_data_dir, "model-${modelNum}.model", "complexParams", "${name}"))"""
+      case LanguageType.R =>
+         s"""${name}DF <- read.parquet(paste(test_data_dir, "model-${modelNum}.model", "complexParams", "${name}", sep = "/"))"""
+      case _ =>
+        throw new MatchError(s"$language is not a recognized language")
+    }
   }
 
   override def assertEquality(v1: Any, v2: Any): Unit = {

@@ -5,20 +5,31 @@ package org.apache.spark.ml.param
 
 import com.microsoft.azure.synapse.ml.core.serialize.ComplexParam
 import com.microsoft.azure.synapse.ml.core.utils.{ModelEquality, ParamEquality}
-import org.apache.spark.ml.{Estimator, Model, PipelineStage}
+import org.apache.spark.ml.{Estimator, Model, PipelineStage, LanguageType}
+import org.apache.spark.ml.LanguageType.LanguageType
 
-trait PipelineStageWrappable[T <: PipelineStage] extends ExternalPythonWrappableParam[T] with ParamEquality[T] {
+trait PipelineStageWrappable[T <: PipelineStage] extends ExternalGeneratedWrappableParam[T] with ParamEquality[T] {
 
-  override def pyValue(v: T): String = {
+  override def generatedValue(v: T): String = {
     s"""${name}Model"""
   }
 
-  override def pyLoadLine(modelNum: Int): String = {
-    s"""
-       |from pyspark.ml import Pipeline
-       |${name}Model = Pipeline.load(join(test_data_dir, "model-$modelNum.model", "complexParams", "$name"))
-       |${name}Model = ${name}Model.getStages()[0]
-       |""".stripMargin
+  override def loadLine(modelNum: Int, language: LanguageType): String = {
+    language match {
+      case LanguageType.Python =>
+        s"""
+        |from pyspark.ml import Pipeline
+        |${name}Model = Pipeline.load(join(test_data_dir, "model-$modelNum.model", "complexParams", "$name"))
+        |${name}Model = ${name}Model.getStages()[0]
+        |""".stripMargin
+      case LanguageType.R =>
+        s"""
+        |${name}Model <- ml_load(sc, paste(test_data_dir, "model-$modelNum.model", "complexParams", "$name", sep = "/"))
+        |${name}Model <- head(ml_stages(${name}Model))
+        |""".stripMargin
+      case _ =>
+        throw new MatchError(s"$language is not a recognized language")
+    }
   }
 
   override def assertEquality(v1: Any, v2: Any): Unit = {

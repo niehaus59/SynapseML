@@ -4,7 +4,8 @@
 package com.microsoft.azure.synapse.ml.codegen
 
 import com.microsoft.azure.synapse.ml.core.serialize.ComplexParam
-import org.apache.spark.ml.param.{Param, ParamPair, PythonWrappableParam, RWrappableParam}
+import org.apache.spark.ml.LanguageType
+import org.apache.spark.ml.param.{GeneratedWrappableParam, Param, ParamPair}
 
 object GenerationUtils {
   def indent(lines: String, numTabs: Int): String = {
@@ -40,12 +41,12 @@ object GenerationUtils {
 
   def pyRenderParam[T](p: Param[T], v: T): String = {
     p match {
-      case pwp: PythonWrappableParam[_] =>
-        pwp.pyConstructorLine(v.asInstanceOf[pwp.InnerType])
+      case pwp: GeneratedWrappableParam[_] =>
+        pwp.constructorLine(v.asInstanceOf[pwp.InnerType])
       case _: ComplexParam[_] =>
         throw new NotImplementedError("No translation found for complex parameter")
       case _ =>
-        s"""${p.name}=${PythonWrappableParam.pyDefaultRender(v, p)}"""
+        s"""${p.name}=${GeneratedWrappableParam.defaultRender(v, LanguageType.Python, p)}"""
     }
   }
 
@@ -55,12 +56,12 @@ object GenerationUtils {
 
   def rRenderParam[T](p: Param[T], v: T): String = {
     p match {
-      case rwp: RWrappableParam[_] =>
-        rwp.rConstructorLine(v.asInstanceOf[rwp.InnerType])
+      case rwp: GeneratedWrappableParam[_] =>
+        rwp.constructorLine(v.asInstanceOf[rwp.InnerType])
       case _: ComplexParam[_] =>
         throw new NotImplementedError("No translation found for complex parameter")
       case _ =>
-        s"""${p.name}=${RWrappableParam.rDefaultRender(v, p)}"""
+        s"""${p.name}=${GeneratedWrappableParam.defaultRender(v, LanguageType.R, p)}"""
     }
   }
 

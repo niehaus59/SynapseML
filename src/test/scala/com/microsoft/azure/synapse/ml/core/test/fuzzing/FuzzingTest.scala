@@ -131,7 +131,7 @@ class FuzzingTest extends TestBase {
         classesWithoutFuzzers.mkString("\n  "))
   }
 
-  test("Verify all stages can be tested in python") {
+  test("Verify all stages can be tested in python and R") {
     val exemptions: Set[String] = Set(
       "com.microsoft.azure.synapse.ml.cognitive.DocumentTranslator",
       "com.microsoft.azure.synapse.ml.automl.TuneHyperparameters",
@@ -163,16 +163,17 @@ class FuzzingTest extends TestBase {
     )
     val applicableStages = pipelineStages.filter(t => !exemptions(t.getClass.getName))
     val applicableClasses = applicableStages.map(_.getClass.asInstanceOf[Class[_]]).toSet
-    val classToFuzzer: Map[Class[_], PyTestFuzzing[_ <: PipelineStage]] =
-      pytestFuzzers.map(f =>
+    val classToFuzzer: Map[Class[_], GeneratedTestFuzzing[_ <: PipelineStage]] =
+      testFuzzers.map(f =>
         (Class.forName(f.getClass.getMethod("pyTestObjects")
           .getGenericReturnType.asInstanceOf[ParameterizedType]
           .getActualTypeArguments.head.asInstanceOf[ParameterizedType]
           .getActualTypeArguments.head.getTypeName),
           f)
       ).toMap
-    val classesWithFuzzers = classToFuzzer.keys
-    val classesWithoutFuzzers = applicableClasses.diff(classesWithFuzzers.toSet)
+
+    val classesWithFuzzers = classToFuzzer.keys.toSet
+    val classesWithoutFuzzers = applicableClasses.diff(classesWithFuzzers)
     assertOrLog(classesWithoutFuzzers.isEmpty, classesWithoutFuzzers.mkString("\n"))
   }
 
@@ -285,7 +286,7 @@ class FuzzingTest extends TestBase {
   private lazy val serializationFuzzers: List[SerializationFuzzing[_ <: PipelineStage with MLWritable]] =
     JarLoadingUtils.instantiateServices[SerializationFuzzing[_ <: PipelineStage with MLWritable]]()
 
-  private lazy val pytestFuzzers: List[PyTestFuzzing[_ <: PipelineStage]] =
-    JarLoadingUtils.instantiateServices[PyTestFuzzing[_ <: PipelineStage]]()
+  private lazy val testFuzzers: List[GeneratedTestFuzzing[_ <: PipelineStage]] =
+    JarLoadingUtils.instantiateServices[GeneratedTestFuzzing[_ <: PipelineStage]]()
 
 }
