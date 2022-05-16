@@ -342,11 +342,11 @@ class OpenAICompletion(override val uid: String) extends CognitiveServicesBase(u
       getValueOpt(r, prompt)
         .map(prompt => getStringEntity(prompt, optionalParams))
         .orElse(getValueOpt(r, batchPrompt)
-          .map(batchPrompt => getArrayStringEntity(batchPrompt, optionalParams)))
+          .map(batchPrompt => getStringEntity(batchPrompt, optionalParams)))
         .orElse(getValueOpt(r, indexPrompt)
-          .map(indexPrompt => getIndexStringEntity(indexPrompt, optionalParams)))
+          .map(indexPrompt => getStringEntity(indexPrompt, optionalParams)))
         .orElse(getValueOpt(r, batchIndexPrompt)
-          .map(batchIndexPrompt => getIndexArrayStringEntity(batchIndexPrompt, optionalParams)))
+          .map(batchIndexPrompt => getStringEntity(batchIndexPrompt, optionalParams)))
         .orElse(throw new IllegalArgumentException(
           "Please set one of prompt, batchPrompt, indexPrompt or batchIndexPrompt."))
 
@@ -356,14 +356,22 @@ class OpenAICompletion(override val uid: String) extends CognitiveServicesBase(u
 
   override def responseDataType: DataType = CompletionResponse.schema
 
-  private[this] def getStringEntity(prompt: String, optionalParams: Map[String, Any]): StringEntity = {
+  private[this] def getStringEntity[A](prompt: A, optionalParams: Map[String, Any]): StringEntity = {
     val fullPayload = optionalParams.updated("prompt", prompt)
-    new StringEntity(fullPayload.toJson.compactPrint, ContentType.APPLICATION_JSON)
+    val js = fullPayload.toJson
+    val cp = js.compactPrint
+    val se = new StringEntity(cp, ContentType.APPLICATION_JSON)
+    se
+    //new StringEntity(fullPayload.toJson.compactPrint, ContentType.APPLICATION_JSON)
   }
 
   private[this] def getArrayStringEntity(prompt: Seq[String], optionalParams: Map[String, Any]): StringEntity = {
-    getStringEntity(formatQuotedArray(prompt), optionalParams)
+    val q = formatQuotedArray(prompt)
+    val se = getStringEntity(formatQuotedArray(prompt), optionalParams)
+    se
+    //getStringEntity(formatQuotedArray(prompt), optionalParams)
   }
+  //formatQuotedArray(prompt), optionalParams)*/
 
   private[this] def getIndexStringEntity(prompt: Seq[Int], optionalParams: Map[String, Any]): StringEntity = {
     getStringEntity(formatUnquotedArray(prompt), optionalParams)
@@ -374,7 +382,9 @@ class OpenAICompletion(override val uid: String) extends CognitiveServicesBase(u
   }
 
   private[this] def formatQuotedArray(collection: Seq[_]): String = {
-    String.format(s"""["%s"]""", collection.mkString(s"""",""""))
+    val s = String.format(s"""["%s"]""", collection.mkString(s"""",""""))
+    s
+    //String.format(s"""["%s"]""", collection.mkString(s"""",""""))
   }
 
   private[this] def formatUnquotedArray(collection: Seq[_]): String = {

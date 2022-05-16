@@ -33,9 +33,10 @@ class OpenAICompletionSuite extends TransformerFuzzing[OpenAICompletion] with Op
 
   lazy val batchPromptDF: DataFrame = Seq(
     Seq(
-      "Now is the time",
+      "This is a test"
+      /*"Now is the time",
       "Knock, knock",
-      "Ask not")
+      "Ask not"*/)
   ).toDF("batchPrompt")
 
   lazy val indexPromptDF: DataFrame = Seq(
@@ -67,7 +68,7 @@ class OpenAICompletionSuite extends TransformerFuzzing[OpenAICompletion] with Op
   def testCompletion(completion: OpenAICompletion, df: DataFrame, requiredLength: Int): Unit = {
     val fromRow = CompletionResponse.makeFromRowConverter
     val transformed = completion.transform(df)
-    //transformed.show(truncate=false) // uncomment for debugging
+    transformed.show(truncate=false) // uncomment for debugging
     transformed.collect().map(r =>
       assert(fromRow(r.getAs[Row]("out")).choices.head.text.length > requiredLength))
   }
