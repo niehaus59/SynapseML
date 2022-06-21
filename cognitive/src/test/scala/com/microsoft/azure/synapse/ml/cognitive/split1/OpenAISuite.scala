@@ -68,7 +68,7 @@ class OpenAICompletionSuite extends TransformerFuzzing[OpenAICompletion] with Op
   def testCompletion(completion: OpenAICompletion, df: DataFrame, requiredLength: Int): Unit = {
     val fromRow = CompletionResponse.makeFromRowConverter
     val transformed = completion.transform(df)
-    transformed.show(truncate=false) // uncomment for debugging
+    //transformed.show(truncate=false) // uncomment for debugging
     transformed.collect().map(r =>
       assert(fromRow(r.getAs[Row]("out")).choices.head.text.length > requiredLength))
   }
@@ -87,8 +87,8 @@ class OpenAICompletionSuite extends TransformerFuzzing[OpenAICompletion] with Op
     super.assertDFEq(df1.drop("out"), df2.drop("out"))(eq)
   }
 
-  override def testObjects(): Seq[TestObject[OpenAICompletion]] = Seq(
-    new TestObject(promptCompletion, promptDF))
+  override def testObjects(): Seq[TestObject[OpenAICompletion]] =
+    Seq(new TestObject(promptCompletion, promptDF))
 
   override def reader: MLReadable[_] = OpenAICompletion
 

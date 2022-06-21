@@ -339,6 +339,8 @@ class OpenAICompletion(override val uid: String) extends CognitiveServicesBase(u
         getValueOpt(r, logProbs).map(v => ("logprobs", v))
       ).flatten).toMap
 
+   //   getValueOpt(r, prompt).map { prompt => }
+
       getValueOpt(r, prompt)
         .map(prompt => getStringEntity(prompt, optionalParams))
         .orElse(getValueOpt(r, batchPrompt)
