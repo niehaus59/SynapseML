@@ -15,7 +15,7 @@ import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 import org.apache.spark.ml.feature.FastVectorAssembler
 import org.apache.spark.ml.linalg.Vector
-import org.apache.spark.ml.regression.GeneralizedLinearRegression
+import org.apache.spark.ml.regression.{GeneralizedLinearRegression, LinearRegression}
 import org.apache.spark.ml.util.MLReadable
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
@@ -314,6 +314,59 @@ class VerifyComputeModelStatistics extends TransformerFuzzing[ComputeModelStatis
     val auc = binaryEvaluator.evaluate(predictionAndLabels)
     assert(auc === cmsAUC)
   }
+
+  test("Multiple trainings") {
+    val dataset = (spark.createDataFrame(Seq(
+      (0.0, 1, 0.50, 0.60, 0.0),
+      (1.0, 0, 0.40, 0.50, 1.0),
+      (2.0, 1, 0.78, 0.99, 2.0),
+      (3.0, 1, 0.12, 0.34, 3.0),
+      (0.0, 1, 0.50, 0.60, 0.0),
+      (1.0, 0, 0.40, 0.50, 1.0),
+      (2.0, 1, 0.78, 0.99, 2.0),
+      (3.0, 0, 0.12, 0.34, 3.0),
+      (0.0, 0, 0.50, 0.60, 0.0),
+      (1.0, 1, 0.40, 0.50, 1.0),
+      (2.0, 0, 0.78, 0.99, 2.0),
+      (3.0, 1, 0.12, 0.34, 3.0)))
+      .toDF("label1", "label2", "col2", "col3", "col4"))
+
+    val linearRegressor = (new LinearRegression()
+      .setRegParam(0.3)
+      .setElasticNetParam(0.8))
+    val trainRegressor = (new TrainRegressor()
+      .setModel(linearRegressor)
+      .setLabelCol("label1"))
+
+    val predictedDF = trainRegressor.fit(dataset).transform(dataset)
+
+    val regressionMetrics =
+      new ComputeModelStatistics()
+        .setLabelCol("label1")
+        .setScoredLabelsCol("prediction")
+        .setEvaluationMetric(MetricConstants.RegressionMetricsName)
+        .transform(predictedDF)
+
+    regressionMetrics.show()
+
+    val newdf = predictedDF.drop("prediction")
+
+    val tc = (new TrainClassifier()
+      .setModel(new LogisticRegression())
+      .setLabelCol("label2"))
+
+    val newPred = tc.fit(newdf).transform(newdf)
+
+    val classifierMetrics =
+      new ComputeModelStatistics()
+        .setLabelCol("label2")
+        .setScoredLabelsCol("prediction")
+        .setEvaluationMetric(MetricConstants.ClassificationMetricsName)
+        .transform(newPred)
+
+    classifierMetrics.show()
+  }
+
 
   override def testObjects(): Seq[TestObject[ComputeModelStatistics]] = Seq(new TestObject(
     new ComputeModelStatistics(), scoredDataset))
